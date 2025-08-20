@@ -3,11 +3,12 @@
 # Link Shortener API Test Script
 # Tests all endpoints with various authentication scenarios
 
+[ -f .env.local ] && set -a && . .env.local && set +a
 set -e
 
 BASE_URL="http://localhost:8080"
 # Note: Update this token to match your .env.local AUTH_TOKEN
-VALID_TOKEN="8E8E3C30-19B6-4DCB-AEC0-84F8CB9485FF"
+VALID_TOKEN="${AUTH_TOKEN}"
 INVALID_TOKEN="invalid-token"
 
 echo "🧪 Link Shortener API Test Suite"
