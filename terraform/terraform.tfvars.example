@@ -1,0 +1,31 @@
+# Copy this file to terraform.tfvars and fill in your values
+
+# AWS Configuration
+aws_region       = "us-east-1"
+ec2_instance_id  = "i-1234567890abcdef0"  # Your existing EC2 instance ID
+ec2_public_ip    = "1.2.3.4"              # Your EC2 public IP
+ssh_private_key_path = "~/.ssh/your-key.pem"
+ssh_user         = "ubuntu"                # or "ec2-user" for Amazon Linux
+
+# Application Configuration
+app_port    = 8080
+auth_token  = "your-uuid-token-here"       # Generate with: uuidgen
+
+# Domain Configuration
+domain_name         = "lnk.avantifellows.org"
+cloudflare_zone_id  = "your-zone-id-here"
+cloudflare_api_token = "your-cloudflare-api-token"
+
+# SSL Certificates (Cloudflare Origin Certificates)
+# Get these from Cloudflare Dashboard > SSL/TLS > Origin Server
+cloudflare_origin_cert = <<-EOT
+-----BEGIN CERTIFICATE-----
+your-origin-certificate-content-here
+-----END CERTIFICATE-----
+EOT
+
+cloudflare_origin_key = <<-EOT
+-----BEGIN PRIVATE KEY-----
+your-origin-private-key-content-here
+-----END PRIVATE KEY-----
+EOT

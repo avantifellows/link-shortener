@@ -1,0 +1,66 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+link-shortener
+link-shortener-*
+
+# Test binary
+bin/
+
+# Go workspace file
+go.work
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+/tmp
+
+# Deployment scripts (temporary)
+deploy.sh
+
+# SSH keys and certificates
+*.pem
+*.key
+*.crt
+
+# Terraform files
+terraform/terraform.tfstate*
+terraform/.terraform/
+terraform/terraform.tfvars
+
+# Test artifacts
+coverage.out
+*.test

@@ -1,0 +1,74 @@
+{{template "base.html" .}}
+
+{{define "content"}}
+<!-- Create Link Form -->
+<div class="bg-white rounded-lg shadow-md p-6 mb-8">
+    <h2 class="text-xl font-semibold text-gray-900 mb-4">Create Short Link</h2>
+    
+    <form hx-post="/shorten" hx-target="#form-result" hx-swap="innerHTML" hx-headers='{"Authorization": "Bearer {{.AuthToken}}"}' class="space-y-4">
+        <div>
+            <label for="original_url" class="block text-sm font-medium text-gray-700">Original URL</label>
+            <input type="url" id="original_url" name="original_url" required
+                   class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                   placeholder="https://example.com/very/long/url">
+        </div>
+
+        <div>
+            <label for="custom_code" class="block text-sm font-medium text-gray-700">Custom Code (optional)</label>
+            <input type="text" id="custom_code" name="custom_code"
+                   class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                   placeholder="my-custom-code">
+            <p class="mt-1 text-sm text-gray-500">3-20 characters, letters, numbers, hyphens, and underscores only</p>
+        </div>
+
+        <div>
+            <label for="created_by" class="block text-sm font-medium text-gray-700">Created By (optional)</label>
+            <input type="text" id="created_by" name="created_by"
+                   class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                   placeholder="Your name or email">
+        </div>
+
+        <button type="submit" 
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition duration-200">
+            Create Short Link
+        </button>
+    </form>
+
+    <div id="form-result" class="mt-4"></div>
+</div>
+
+<!-- Statistics Cards -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <h3 class="text-lg font-medium text-gray-900">Total Links</h3>
+        <p class="text-3xl font-bold text-blue-600 mt-2">{{.Analytics.TotalLinks}}</p>
+    </div>
+    
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <h3 class="text-lg font-medium text-gray-900">Total Clicks</h3>
+        <p class="text-3xl font-bold text-green-600 mt-2">{{.Analytics.TotalClicks}}</p>
+    </div>
+    
+    <div class="bg-white rounded-lg shadow-md p-6">
+        <h3 class="text-lg font-medium text-gray-900">Avg Clicks/Link</h3>
+        <p class="text-3xl font-bold text-purple-600 mt-2">
+            {{if gt .Analytics.TotalLinks 0}}
+                {{printf "%.1f" (divf .Analytics.TotalClicks .Analytics.TotalLinks)}}
+            {{else}}
+                0.0
+            {{end}}
+        </p>
+    </div>
+</div>
+
+<!-- Analytics Table -->
+<div class="bg-white rounded-lg shadow-md">
+    <div class="px-6 py-4 border-b border-gray-200">
+        <h3 class="text-lg font-medium text-gray-900">Link Analytics</h3>
+    </div>
+    
+    <div id="analytics-table" hx-get="/analytics" hx-trigger="load, refresh">
+        {{template "analytics-table.html" .}}
+    </div>
+</div>
+{{end}}
