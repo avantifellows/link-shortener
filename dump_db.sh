@@ -1,11 +1,26 @@
 #!/bin/bash
 set -e
 
-# Same configuration as deploy.sh
-SERVER="ubuntu@65.0.246.88"
-KEY_PATH="~/certs/AvantiFellows.pem"
-DEPLOY_DIR="/opt/link-shortener"
-SERVICE_NAME="link-shortener"
+# Load deployment configuration (same as deploy.sh)
+if [ -f ".env.deploy.local" ]; then
+    echo "📋 Loading local deployment config..."
+    source .env.deploy.local
+elif [ -f ".env.deploy" ]; then
+    echo "📋 Loading deployment config..."
+    source .env.deploy
+else
+    echo "❌ Error: No deployment configuration found!"
+    echo "   Please create .env.deploy.local with your server details"
+    echo "   You can copy .env.deploy as a template"
+    exit 1
+fi
+
+# Validate required variables
+if [ -z "$SERVER" ] || [ -z "$KEY_PATH" ] || [ -z "$DEPLOY_DIR" ] || [ -z "$SERVICE_NAME" ]; then
+    echo "❌ Error: Missing required deployment configuration!"
+    echo "   Required: SERVER, KEY_PATH, DEPLOY_DIR, SERVICE_NAME"
+    exit 1
+fi
 LOCAL_DB="./link_shortener.db"
 REMOTE_DB_DIR="/var/lib/link-shortener"
 REMOTE_DB="$REMOTE_DB_DIR/database.db"

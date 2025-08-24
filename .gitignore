@@ -18,6 +18,7 @@ go.work
 .env.local
 .env.production
 .env.*.local
+.env.deploy.local
 
 # Database files
 *.db
@@ -48,8 +49,7 @@ tmp/
 temp/
 /tmp
 
-# Deployment scripts (temporary)
-deploy.sh
+# Deployment scripts - now included in repo
 
 # SSH keys and certificates
 *.pem
