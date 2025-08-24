@@ -109,19 +109,64 @@ func (s *ShortenerService) TrackClick(shortCode, userAgent, ipAddress, referrer 
 }
 
 func (s *ShortenerService) GetAnalytics() (*models.AnalyticsResponse, error) {
-	// Get all links
-	rows, err := s.db.Query(`
+	return s.GetAnalyticsPaginated(1, 50, "")
+}
+
+func (s *ShortenerService) GetAnalyticsPaginated(page, pageSize int, searchTerm string) (*models.AnalyticsResponse, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 1000 {
+		pageSize = 50
+	}
+
+	// Build WHERE clause for search
+	var whereClause string
+	var queryArgs []interface{}
+	var countArgs []interface{}
+	
+	if searchTerm != "" {
+		searchPattern := "%" + searchTerm + "%"
+		whereClause = "WHERE (short_code LIKE ? OR original_url LIKE ?)"
+		queryArgs = []interface{}{searchPattern, searchPattern}
+		countArgs = []interface{}{searchPattern, searchPattern}
+	}
+
+	// Get total count first
+	var totalLinks int
+	var totalClicks int
+	countQuery := fmt.Sprintf(`
+		SELECT COUNT(*), COALESCE(SUM(click_count), 0)
+		FROM link_mappings %s
+	`, whereClause)
+	
+	err := s.db.QueryRow(countQuery, countArgs...).Scan(&totalLinks, &totalClicks)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get totals: %w", err)
+	}
+
+	// Calculate pagination
+	offset := (page - 1) * pageSize
+	totalPages := (totalLinks + pageSize - 1) / pageSize
+
+	// Get paginated links
+	linkQuery := fmt.Sprintf(`
 		SELECT short_code, original_url, created_at, created_by, click_count, last_accessed
-		FROM link_mappings 
+		FROM link_mappings %s
 		ORDER BY created_at DESC
-	`)
+		LIMIT ? OFFSET ?
+	`, whereClause)
+	
+	// Add LIMIT and OFFSET to query args
+	queryArgs = append(queryArgs, pageSize, offset)
+	
+	rows, err := s.db.Query(linkQuery, queryArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch links: %w", err)
 	}
 	defer rows.Close()
 
 	var links []models.LinkMapping
-	var totalClicks int
 
 	for rows.Next() {
 		var link models.LinkMapping
@@ -140,7 +185,6 @@ func (s *ShortenerService) GetAnalytics() (*models.AnalyticsResponse, error) {
 		}
 
 		links = append(links, link)
-		totalClicks += link.ClickCount
 	}
 
 	// Get recent clicks
@@ -171,9 +215,17 @@ func (s *ShortenerService) GetAnalytics() (*models.AnalyticsResponse, error) {
 
 	return &models.AnalyticsResponse{
 		Links:        links,
-		TotalLinks:   len(links),
+		TotalLinks:   totalLinks,
 		TotalClicks:  totalClicks,
 		RecentClicks: recentClicks,
+		Pagination: &models.Pagination{
+			CurrentPage: page,
+			TotalPages:  totalPages,
+			PageSize:    pageSize,
+			TotalItems:  totalLinks,
+			HasNext:     page < totalPages,
+			HasPrev:     page > 1,
+		},
 	}, nil
 }
 

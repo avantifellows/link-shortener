@@ -3,10 +3,12 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/avantifellows/link-shortener/internal/models"
@@ -28,6 +30,36 @@ func New(db *sql.DB) *Handlers {
 			}
 			return float64(a) / float64(b)
 		},
+		"add": func(a, b int) int {
+			return a + b
+		},
+		"sub": func(a, b int) int {
+			return a - b
+		},
+		"pagination_range": func(current, total int) []int {
+			var pages []int
+			start := current - 2
+			end := current + 2
+			
+			if start < 1 {
+				start = 1
+			}
+			if end > total {
+				end = total
+			}
+			
+			for i := start; i <= end; i++ {
+				pages = append(pages, i)
+			}
+			return pages
+		},
+		"build_url": func(page int, pageSize int, searchTerm string) string {
+			params := fmt.Sprintf("page=%d&size=%d", page, pageSize)
+			if searchTerm != "" {
+				params += fmt.Sprintf("&search=%s", strings.ReplaceAll(searchTerm, " ", "+"))
+			}
+			return "/analytics?" + params
+		},
 	}
 	
 	// Load templates with functions
@@ -46,7 +78,12 @@ func (h *Handlers) Health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
-	analytics, err := h.shortenerService.GetAnalytics()
+	// Get pagination and search parameters
+	page := getIntParam(r, "page", 1)
+	pageSize := getIntParam(r, "size", 50)
+	searchTerm := strings.TrimSpace(r.URL.Query().Get("search"))
+
+	analytics, err := h.shortenerService.GetAnalyticsPaginated(page, pageSize, searchTerm)
 	if err != nil {
 		log.Printf("Error getting analytics: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -54,15 +91,17 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := struct {
-		Title     string
-		Analytics *models.AnalyticsResponse
-		BaseURL   string
-		AuthToken string
+		Title      string
+		Analytics  *models.AnalyticsResponse
+		BaseURL    string
+		AuthToken  string
+		SearchTerm string
 	}{
-		Title:     "Link Shortener Dashboard",
-		Analytics: analytics,
-		BaseURL:   getBaseURL(),
-		AuthToken: getAuthToken(),
+		Title:      "Link Shortener Dashboard",
+		Analytics:  analytics,
+		BaseURL:    getBaseURL(),
+		AuthToken:  getAuthToken(),
+		SearchTerm: searchTerm,
 	}
 
 	w.Header().Set("Content-Type", "text/html")
@@ -155,7 +194,12 @@ func (h *Handlers) RedirectURL(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) Analytics(w http.ResponseWriter, r *http.Request) {
-	analytics, err := h.shortenerService.GetAnalytics()
+	// Get pagination and search parameters
+	page := getIntParam(r, "page", 1)
+	pageSize := getIntParam(r, "size", 50)
+	searchTerm := strings.TrimSpace(r.URL.Query().Get("search"))
+
+	analytics, err := h.shortenerService.GetAnalyticsPaginated(page, pageSize, searchTerm)
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
@@ -168,11 +212,13 @@ func (h *Handlers) Analytics(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// Return htmx partial with analytics table
 		data := struct {
-			Analytics *models.AnalyticsResponse
-			BaseURL   string
+			Analytics  *models.AnalyticsResponse
+			BaseURL    string
+			SearchTerm string
 		}{
-			Analytics: analytics,
-			BaseURL:   getBaseURL(),
+			Analytics:  analytics,
+			BaseURL:    getBaseURL(),
+			SearchTerm: searchTerm,
 		}
 
 		w.Header().Set("Content-Type", "text/html")
@@ -212,4 +258,18 @@ func getBaseURL() string {
 
 func getAuthToken() string {
 	return os.Getenv("AUTH_TOKEN")
+}
+
+func getIntParam(r *http.Request, paramName string, defaultValue int) int {
+	param := r.URL.Query().Get(paramName)
+	if param == "" {
+		return defaultValue
+	}
+	
+	value, err := strconv.Atoi(param)
+	if err != nil {
+		return defaultValue
+	}
+	
+	return value
 }

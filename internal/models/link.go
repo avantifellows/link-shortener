@@ -35,8 +35,18 @@ type CreateShortURLResponse struct {
 }
 
 type AnalyticsResponse struct {
-	Links      []LinkMapping    `json:"links"`
-	TotalLinks int              `json:"total_links"`
-	TotalClicks int             `json:"total_clicks"`
+	Links        []LinkMapping    `json:"links"`
+	TotalLinks   int              `json:"total_links"`
+	TotalClicks  int              `json:"total_clicks"`
 	RecentClicks []ClickAnalytics `json:"recent_clicks"`
+	Pagination   *Pagination      `json:"pagination,omitempty"`
+}
+
+type Pagination struct {
+	CurrentPage int `json:"current_page"`
+	TotalPages  int `json:"total_pages"`
+	PageSize    int `json:"page_size"`
+	TotalItems  int `json:"total_items"`
+	HasNext     bool `json:"has_next"`
+	HasPrev     bool `json:"has_prev"`
 }

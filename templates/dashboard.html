@@ -64,10 +64,48 @@
 <!-- Analytics Table -->
 <div class="bg-white rounded-lg shadow-md">
     <div class="px-6 py-4 border-b border-gray-200">
-        <h3 class="text-lg font-medium text-gray-900">Link Analytics</h3>
+        <div class="flex items-center justify-between">
+            <h3 class="text-lg font-medium text-gray-900">Link Analytics</h3>
+            
+            <!-- Search Form -->
+            <div class="flex items-center space-x-2">
+                <form hx-get="/" hx-target="body" hx-swap="outerHTML" hx-trigger="submit, input changed delay:500ms" class="flex items-center space-x-2">
+                    <div class="relative">
+                        <input type="text" 
+                               name="search" 
+                               value="{{.SearchTerm}}"
+                               placeholder="Search links..." 
+                               class="w-64 pl-10 {{if .SearchTerm}}pr-10{{else}}pr-4{{end}} py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <svg class="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                            </svg>
+                        </div>
+                        {{if .SearchTerm}}
+                        <!-- Clear button (X) - only show when there's a search term -->
+                        <button type="button" 
+                                hx-get="/" 
+                                hx-target="body" 
+                                hx-swap="outerHTML"
+                                class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                                title="Clear search">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                        {{end}}
+                    </div>
+                </form>
+            </div>
+        </div>
+        {{if .SearchTerm}}
+        <div class="mt-2 text-sm text-gray-600">
+            Search results for: <span class="font-medium">"{{.SearchTerm}}"</span>
+        </div>
+        {{end}}
     </div>
     
-    <div id="analytics-table" hx-get="/analytics" hx-trigger="load, refresh">
+    <div id="analytics-table" hx-get="/analytics" hx-trigger="load, refresh" hx-include="[name='search']">
         {{template "analytics-table.html" .}}
     </div>
 </div>
