@@ -45,9 +45,9 @@ func main() {
 
 	// Public routes (no authentication required)
 	r.Get("/health", h.Health)
-	r.Get("/{code}", h.RedirectURL) // Redirects should be public
 	r.Get("/", h.Dashboard)         // Dashboard public for now
 	r.Get("/analytics", h.Analytics) // Analytics public for now
+	r.Get("/{code}", h.RedirectURL) // Redirects should be public - MUST be last to avoid conflicts
 
 	// Protected routes (require authentication)
 	r.Group(func(r chi.Router) {

@@ -58,7 +58,7 @@ func New(db *sql.DB) *Handlers {
 			if searchTerm != "" {
 				params += fmt.Sprintf("&search=%s", strings.ReplaceAll(searchTerm, " ", "+"))
 			}
-			return "/analytics?" + params
+			return "/?" + params
 		},
 	}
 	
