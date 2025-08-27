@@ -36,26 +36,35 @@ func (s *ShortenerService) CreateShortURL(req models.CreateShortURLRequest) (*mo
 			return nil, fmt.Errorf("invalid custom code format")
 		}
 		
-		// Check if custom code is available
-		if s.shortCodeExists(req.CustomCode) {
-			return nil, fmt.Errorf("custom code already exists")
-		}
 		shortCode = req.CustomCode
+		// For custom codes, we'll handle conflicts in the database insert
 	} else {
-		// Generate random short code
-		shortCode, err = s.generateShortCode()
+		// For generated codes, use retry logic with database insert
+		shortCode, err = s.generateUniqueShortCode(req.OriginalURL, req.CreatedBy)
 		if err != nil {
-			return nil, fmt.Errorf("failed to generate short code: %w", err)
+			return nil, fmt.Errorf("failed to create short code: %w", err)
 		}
+		
+		// Code was successfully inserted, return response
+		baseURL := getBaseURL()
+		return &models.CreateShortURLResponse{
+			ShortCode:   shortCode,
+			ShortURL:    fmt.Sprintf("%s/%s", baseURL, shortCode),
+			OriginalURL: req.OriginalURL,
+		}, nil
 	}
 
-	// Store in database
+	// Handle custom code insertion (with potential conflict)
 	_, err = s.db.Exec(`
 		INSERT INTO link_mappings (short_code, original_url, created_at, created_by, click_count)
 		VALUES (?, ?, ?, ?, 0)
 	`, shortCode, req.OriginalURL, time.Now().Unix(), req.CreatedBy)
 
 	if err != nil {
+		// Check if this is a constraint violation (code already exists)
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") || strings.Contains(err.Error(), "PRIMARY KEY constraint failed") {
+			return nil, fmt.Errorf("custom code already exists")
+		}
 		return nil, fmt.Errorf("failed to store URL mapping: %w", err)
 	}
 
@@ -229,7 +238,7 @@ func (s *ShortenerService) GetAnalyticsPaginated(page, pageSize int, searchTerm 
 	}, nil
 }
 
-func (s *ShortenerService) generateShortCode() (string, error) {
+func (s *ShortenerService) generateUniqueShortCode(originalURL, createdBy string) (string, error) {
 	const maxAttempts = 10
 	
 	for i := 0; i < maxAttempts; i++ {
@@ -247,10 +256,24 @@ func (s *ShortenerService) generateShortCode() (string, error) {
 			code = code[:4]
 		}
 		
-		// Check if code already exists
-		if !s.shortCodeExists(code) {
+		// Attempt to insert directly into database - this is atomic
+		_, err := s.db.Exec(`
+			INSERT INTO link_mappings (short_code, original_url, created_at, created_by, click_count)
+			VALUES (?, ?, ?, ?, 0)
+		`, code, originalURL, time.Now().Unix(), createdBy)
+		
+		if err == nil {
+			// Success! Code was unique and inserted
 			return code, nil
 		}
+		
+		// If it's a constraint violation, try again with a new code
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") || strings.Contains(err.Error(), "PRIMARY KEY constraint failed") {
+			continue
+		}
+		
+		// Other database error, return it
+		return "", fmt.Errorf("database error: %w", err)
 	}
 	
 	return "", fmt.Errorf("failed to generate unique short code after %d attempts", maxAttempts)
