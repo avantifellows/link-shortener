@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -46,10 +47,18 @@ func Initialize() (*sql.DB, error) {
 		return nil, err
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	// Add SQLite connection parameters for better concurrency
+	connectionString := dbPath + "?_journal_mode=WAL&_synchronous=NORMAL&_cache_size=1000&_foreign_keys=1&_busy_timeout=5000"
+	
+	db, err := sql.Open("sqlite", connectionString)
 	if err != nil {
 		return nil, err
 	}
+
+	// Configure connection pool for high concurrency
+	db.SetMaxOpenConns(25)    // Limit concurrent connections to prevent resource exhaustion
+	db.SetMaxIdleConns(25)    // Keep connections alive for reuse
+	db.SetConnMaxLifetime(5 * time.Minute) // Rotate connections periodically
 
 	if err := db.Ping(); err != nil {
 		return nil, err

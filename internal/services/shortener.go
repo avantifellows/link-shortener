@@ -117,6 +117,35 @@ func (s *ShortenerService) TrackClick(shortCode, userAgent, ipAddress, referrer 
 	return nil
 }
 
+func (s *ShortenerService) BeginTransaction() (*sql.Tx, error) {
+	return s.db.Begin()
+}
+
+func (s *ShortenerService) TrackClickInTransaction(tx *sql.Tx, shortCode, userAgent, ipAddress, referrer string, timestamp time.Time) error {
+	// Record click analytics
+	_, err := tx.Exec(`
+		INSERT INTO click_analytics (short_code, timestamp, user_agent, ip_address, referrer)
+		VALUES (?, ?, ?, ?, ?)
+	`, shortCode, timestamp.Unix(), userAgent, ipAddress, referrer)
+
+	if err != nil {
+		return fmt.Errorf("failed to record click analytics: %w", err)
+	}
+
+	// Update click count and last accessed
+	_, err = tx.Exec(`
+		UPDATE link_mappings 
+		SET click_count = click_count + 1, last_accessed = ?
+		WHERE short_code = ?
+	`, timestamp.Unix(), shortCode)
+
+	if err != nil {
+		return fmt.Errorf("failed to update click count: %w", err)
+	}
+
+	return nil
+}
+
 func (s *ShortenerService) GetAnalytics() (*models.AnalyticsResponse, error) {
 	return s.GetAnalyticsPaginated(1, 50, "")
 }

@@ -10,15 +10,26 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/avantifellows/link-shortener/internal/logger"
 	"github.com/avantifellows/link-shortener/internal/models"
 	"github.com/avantifellows/link-shortener/internal/services"
 	"github.com/go-chi/chi/v5"
 )
 
+type ClickEvent struct {
+	ShortCode string
+	UserAgent string
+	IPAddress string
+	Referrer  string
+	Timestamp time.Time
+}
+
 type Handlers struct {
 	shortenerService *services.ShortenerService
 	templates        *template.Template
+	clickQueue       chan ClickEvent
 }
 
 func New(db *sql.DB) *Handlers {
@@ -65,9 +76,71 @@ func New(db *sql.DB) *Handlers {
 	// Load templates with functions
 	templates := template.Must(template.New("").Funcs(funcMap).ParseGlob("templates/*.html"))
 	
-	return &Handlers{
+	// Create click queue channel
+	clickQueue := make(chan ClickEvent, 10000) // Large buffer for traffic spikes
+	
+	h := &Handlers{
 		shortenerService: services.NewShortenerService(db),
 		templates:        templates,
+		clickQueue:       clickQueue,
+	}
+	
+	// Start click processing goroutine
+	go h.processClickQueue()
+	
+	return h
+}
+
+func (h *Handlers) processClickQueue() {
+	batch := make([]ClickEvent, 0, 5000)
+	ticker := time.NewTicker(5 * time.Minute) // Production: 5 minutes
+	defer ticker.Stop()
+	
+	for {
+		select {
+		case click := <-h.clickQueue:
+			batch = append(batch, click)
+			
+			// Production: flush when batch reaches 5000 clicks
+			if len(batch) >= 5000 {
+				logger.Debug("Flushing %d clicks to database", len(batch))
+				h.writeBatch(batch)
+				batch = batch[:0] // Reset slice
+			}
+			
+		case <-ticker.C:
+			// Time-based flush every 5 minutes (production)
+			if len(batch) > 0 {
+				logger.Debug("Timer flush: %d clicks to database", len(batch))
+				h.writeBatch(batch)
+				batch = batch[:0] // Reset slice
+			}
+		}
+	}
+}
+
+func (h *Handlers) writeBatch(clicks []ClickEvent) {
+	if len(clicks) == 0 {
+		return
+	}
+	
+	tx, err := h.shortenerService.BeginTransaction()
+	if err != nil {
+		logger.Error("Failed to begin transaction for click batch: %v", err)
+		return
+	}
+	defer tx.Rollback() // Will be no-op if committed
+	
+	// Batch process all clicks in single transaction
+	for _, click := range clicks {
+		if err := h.shortenerService.TrackClickInTransaction(tx, click.ShortCode, click.UserAgent, click.IPAddress, click.Referrer, click.Timestamp); err != nil {
+			logger.Error("Failed to track click in batch for code '%s': %v", click.ShortCode, err)
+			// Continue processing other clicks
+		}
+	}
+	
+	if err := tx.Commit(); err != nil {
+		logger.Error("Failed to commit click batch: %v", err)
 	}
 }
 
@@ -85,7 +158,7 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
 
 	analytics, err := h.shortenerService.GetAnalyticsPaginated(page, pageSize, searchTerm)
 	if err != nil {
-		log.Printf("Error getting analytics: %v", err)
+		logger.Error("Error getting analytics: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -106,7 +179,7 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html")
 	if err := h.templates.ExecuteTemplate(w, "dashboard.html", data); err != nil {
-		log.Printf("Template execution error: %v", err)
+		logger.Error("Template execution error: %v", err)
 		http.Error(w, "Template error", http.StatusInternalServerError)
 		return
 	}
@@ -168,27 +241,44 @@ func (h *Handlers) CreateShortURL(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) RedirectURL(w http.ResponseWriter, r *http.Request) {
 	shortCode := chi.URLParam(r, "code")
 	if shortCode == "" {
+		log.Printf("[DEBUG] RedirectURL: empty short code")
 		http.NotFound(w, r)
 		return
 	}
+
+	logger.Debug("RedirectURL: looking up code '%s'", shortCode)
 
 	// Get original URL
 	originalURL, err := h.shortenerService.GetOriginalURL(shortCode)
 	if err != nil {
+		logger.Error("RedirectURL: failed to get URL for code '%s': %v", shortCode, err)
 		http.NotFound(w, r)
 		return
 	}
 
-	// Track click analytics
+	logger.Debug("RedirectURL: found URL '%s' for code '%s'", originalURL, shortCode)
+
+	// Track click analytics using async queue
 	userAgent := r.Header.Get("User-Agent")
 	ipAddress := getClientIP(r)
 	referrer := r.Header.Get("Referer")
 
-	// Track click in background (don't block redirect)
-	go func() {
-		h.shortenerService.TrackClick(shortCode, userAgent, ipAddress, referrer)
-	}()
+	// Non-blocking send to click queue
+	select {
+	case h.clickQueue <- ClickEvent{
+		ShortCode: shortCode,
+		UserAgent: userAgent,
+		IPAddress: ipAddress,
+		Referrer:  referrer,
+		Timestamp: time.Now(),
+	}:
+		// Click queued successfully
+	default:
+		// Queue full - drop click (graceful degradation)
+		logger.Warn("Click queue full, dropping click for code '%s'", shortCode)
+	}
 
+	logger.Debug("RedirectURL: redirecting '%s' to '%s'", shortCode, originalURL)
 	// Redirect to original URL
 	http.Redirect(w, r, originalURL, http.StatusFound)
 }
