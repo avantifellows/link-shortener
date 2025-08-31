@@ -1,0 +1,48 @@
+
+Summary:
+  Total:	20.0110 secs
+  Slowest:	9.5595 secs
+  Fastest:	0.0419 secs
+  Average:	1.3060 secs
+  Requests/sec:	49.9726
+  
+  Total data:	49693 bytes
+  Size/request:	50 bytes
+
+Response time histogram:
+  0.042 [1]	|
+  0.994 [563]	|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  1.945 [162]	|■■■■■■■■■■■■
+  2.897 [135]	|■■■■■■■■■■
+  3.849 [44]	|■■■
+  4.801 [20]	|■
+  5.752 [17]	|■
+  6.704 [11]	|■
+  7.656 [10]	|■
+  8.608 [5]	|
+  9.559 [7]	|
+
+
+Latency distribution:
+  10% in 0.0971 secs
+  25% in 0.1546 secs
+  50% in 0.6111 secs
+  75% in 1.9863 secs
+  90% in 3.3108 secs
+  95% in 4.9526 secs
+  99% in 8.5490 secs
+
+Details (average, fastest, slowest):
+  DNS+dialup:	0.0360 secs, 0.0419 secs, 9.5595 secs
+  DNS-lookup:	0.0020 secs, 0.0000 secs, 0.0197 secs
+  req write:	0.0000 secs, 0.0000 secs, 0.0002 secs
+  resp wait:	1.0006 secs, 0.0418 secs, 8.9114 secs
+  resp read:	0.0000 secs, 0.0000 secs, 0.0014 secs
+
+Status code distribution:
+  [302]	974 responses
+  [404]	1 responses
+
+Error distribution:
+  [25]	Get "https://lnk.avantifellows.org/test02": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+

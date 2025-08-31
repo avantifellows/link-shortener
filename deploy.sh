@@ -26,6 +26,10 @@ echo "🎯 Deploying to: $SERVER"
 
 echo "🚀 Deploying Link Shortener to server..."
 
+# Build binary for Linux
+echo "🔨 Building binary for Linux..."
+GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o link-shortener-linux cmd/server/main.go
+
 # Create deployment directory
 ssh -i $KEY_PATH $SERVER "sudo mkdir -p $DEPLOY_DIR"
 
@@ -39,7 +43,7 @@ echo "📁 Uploading templates, static files, and environment config..."
 scp -i $KEY_PATH -r templates $SERVER:/tmp/
 scp -i $KEY_PATH -r static $SERVER:/tmp/
 scp -i $KEY_PATH .env.production $SERVER:/tmp/
-ssh -i $KEY_PATH $SERVER "sudo rm -rf $DEPLOY_DIR/templates $DEPLOY_DIR/static && sudo mv /tmp/templates $DEPLOY_DIR/ && sudo mv /tmp/static $DEPLOY_DIR/ && sudo mv /tmp/.env.production $DEPLOY_DIR/.env"
+ssh -i $KEY_PATH $SERVER "sudo rm -rf $DEPLOY_DIR/templates $DEPLOY_DIR/static && sudo mv /tmp/templates $DEPLOY_DIR/ && sudo mv /tmp/static $DEPLOY_DIR/ && sudo mv /tmp/.env.production $DEPLOY_DIR/.env.local"
 
 # Create systemd service file
 echo "⚙️  Creating systemd service..."
@@ -52,7 +56,7 @@ After=network.target
 Type=simple
 User=ubuntu
 WorkingDirectory=/opt/link-shortener
-EnvironmentFile=/opt/link-shortener/.env
+EnvironmentFile=/opt/link-shortener/.env.local
 ExecStart=/opt/link-shortener/link-shortener
 Restart=always
 RestartSec=3
@@ -82,16 +86,36 @@ DOMAIN_NAME=$(grep "^BASE_URL=" .env.production | cut -d'=' -f2 | sed 's|https:/
 # Configure nginx
 echo "🌐 Configuring nginx for domain: $DOMAIN_NAME..."
 
-# Create nginx configuration for Cloudflare Flexible SSL
+# Create nginx configuration for Let's Encrypt SSL
 cat > /tmp/link-shortener-nginx << EOF
+# Redirect HTTP to HTTPS
 server {
     listen 80;
     server_name $DOMAIN_NAME;
+    return 301 https://\$server_name\$request_uri;
+}
+
+# HTTPS server with Let's Encrypt SSL
+server {
+    listen 443 ssl;
+    server_name $DOMAIN_NAME;
+
+    # Let's Encrypt SSL certificates
+    ssl_certificate /etc/letsencrypt/live/$DOMAIN_NAME/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN_NAME/privkey.pem;
+    
+    # SSL configuration
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
 
     # Security headers
     add_header X-Frame-Options DENY always;
     add_header X-Content-Type-Options nosniff always;
     add_header X-XSS-Protection "1; mode=block" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
     # Proxy to Link Shortener application
     location / {

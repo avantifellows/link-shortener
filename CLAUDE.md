@@ -26,6 +26,7 @@ A minimalist link shortener service hosted at `lnk.avantifellows.org/CODE` desig
 - **Nginx** - Reverse proxy for domain routing to application port
 - **SQLite** - Local database file for URL mappings and analytics
 - **Systemd** - Service management for application lifecycle
+- **Let's Encrypt** - SSL certificate for HTTPS encryption
 - **Cloudflare** - DNS management for custom domain
 
 ### DevOps
@@ -34,7 +35,7 @@ A minimalist link shortener service hosted at `lnk.avantifellows.org/CODE` desig
 - **GitHub Secrets** - Secure storage for certificates and sensitive config
 - **Systemctl** - Service management and auto-restart
 - **Nginx** - Web server and reverse proxy configuration
-- **Cloudflare Origin Certificate** - SSL certificate for Cloudflare-to-server encryption
+- **Let's Encrypt** - Free SSL certificate for HTTPS encryption
 
 ## Project Structure
 
@@ -196,8 +197,8 @@ DATABASE_PATH=/var/lib/link-shortener/database.db
 PORT=8080
 DEBUG=false
 LOG_LEVEL=INFO
-CLOUDFLARE_ORIGIN_CERT_PATH=/etc/ssl/cloudflare/origin-cert.pem
-CLOUDFLARE_ORIGIN_KEY_PATH=/etc/ssl/cloudflare/origin-key.pem
+SSL_CERT_PATH=/etc/letsencrypt/live/lnk.avantifellows.org/fullchain.pem
+SSL_KEY_PATH=/etc/letsencrypt/live/lnk.avantifellows.org/privkey.pem
 GRACEFUL_SHUTDOWN_TIMEOUT=30s
 ```
 
@@ -205,10 +206,6 @@ GRACEFUL_SHUTDOWN_TIMEOUT=30s
 
 ### Secrets (Sensitive Data) 🔐
 ```bash
-# SSL Certificates
-CLOUDFLARE_ORIGIN_CERT=<certificate_pem_content>
-CLOUDFLARE_ORIGIN_KEY=<private_key_pem_content>
-
 # Authentication
 ADMIN_PASSWORD_HASH=<bcrypt_hash>
 
@@ -267,10 +264,10 @@ ADMIN_USERNAME=admin
 - Rate limiting on API endpoints
 - Basic authentication for admin functions
 - HTTPS only (enforced by Cloudflare)
-- End-to-end encryption with Cloudflare Origin Certificate
-- GitHub Secrets for sensitive configuration (certificates, passwords, SSH keys)
+- HTTPS encryption with Let's Encrypt SSL certificate
+- GitHub Secrets for sensitive configuration (passwords, SSH keys)
 - No sensitive data in code repository or logs
-- Secure certificate file permissions (600)
+- Automatic SSL certificate renewal via certbot
 - SSH key-based authentication for deployment
 
 ## Monitoring & Alerting
@@ -278,7 +275,7 @@ ADMIN_USERNAME=admin
 - Systemd journal logs for application events
 - Nginx access logs for request tracking
 - SQLite database file monitoring
-- Cloudflare SSL certificate validity monitoring
+- Let's Encrypt SSL certificate validity monitoring
 - Discord webhook for critical alerts (following AF pattern)
 - Logrotate for log file management
 
@@ -296,6 +293,7 @@ ADMIN_USERNAME=admin
 - Terraform state management for infrastructure rollbacks
 - Git-based application versioning for code rollbacks
 - Automated SQLite database backups via Terraform
+- Let's Encrypt certificate auto-renewal
 - Terraform-managed nginx configuration versioning
 - Systemd service management through Terraform
 - DNS TTL management for quick domain changes
