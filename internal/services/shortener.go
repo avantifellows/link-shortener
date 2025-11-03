@@ -92,6 +92,111 @@ func (s *ShortenerService) GetOriginalURL(shortCode string) (string, error) {
 	return originalURL, nil
 }
 
+func (s *ShortenerService) UpdateLink(oldShortCode string, req models.UpdateLinkRequest) (*models.UpdateLinkResponse, error) {
+	// Get the existing link first
+	var existingLink models.LinkMapping
+	var createdAt int64
+	var lastAccessed sql.NullInt64
+	var parentShortCode sql.NullString
+
+	err := s.db.QueryRow(`
+		SELECT short_code, original_url, created_at, created_by, click_count, last_accessed, parent_short_code
+		FROM link_mappings WHERE short_code = ?
+	`, oldShortCode).Scan(&existingLink.ShortCode, &existingLink.OriginalURL, &createdAt, &existingLink.CreatedBy, &existingLink.ClickCount, &lastAccessed, &parentShortCode)
+
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("short code not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("database error: %w", err)
+	}
+
+	existingLink.CreatedAt = time.Unix(createdAt, 0)
+	if lastAccessed.Valid {
+		t := time.Unix(lastAccessed.Int64, 0)
+		existingLink.LastAccessed = &t
+	}
+	if parentShortCode.Valid {
+		existingLink.ParentShortCode = &parentShortCode.String
+	}
+
+	// Validate inputs
+	newShortCode := strings.TrimSpace(req.NewShortCode)
+	newURL := strings.TrimSpace(req.NewURL)
+
+	// Use existing values if not provided
+	if newShortCode == "" {
+		newShortCode = existingLink.ShortCode
+	}
+	if newURL == "" {
+		newURL = existingLink.OriginalURL
+	}
+
+	// Validate URL if it's being changed
+	if newURL != existingLink.OriginalURL && !isValidURL(newURL) {
+		return nil, fmt.Errorf("invalid URL format")
+	}
+
+	// Validate short code if it's being changed
+	if newShortCode != existingLink.ShortCode && !isValidShortCode(newShortCode) {
+		return nil, fmt.Errorf("invalid short code format")
+	}
+
+	// If nothing changed, return current state
+	if newShortCode == existingLink.ShortCode && newURL == existingLink.OriginalURL {
+		return &models.UpdateLinkResponse{
+			OldShortCode: oldShortCode,
+			NewShortCode: newShortCode,
+			NewURL:       newURL,
+			ShortURL:     fmt.Sprintf("%s/%s", getBaseURL(), newShortCode),
+		}, nil
+	}
+
+	// Begin transaction for atomic updates
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if newShortCode != existingLink.ShortCode {
+		// Short code is changing - create new link with parent reference
+		_, err = tx.Exec(`
+			INSERT INTO link_mappings (short_code, original_url, created_at, created_by, click_count, last_accessed, parent_short_code)
+			VALUES (?, ?, ?, ?, 0, NULL, ?)
+		`, newShortCode, newURL, time.Now().Unix(), existingLink.CreatedBy, oldShortCode)
+
+		if err != nil {
+			if strings.Contains(err.Error(), "UNIQUE constraint failed") || strings.Contains(err.Error(), "PRIMARY KEY constraint failed") {
+				return nil, fmt.Errorf("short code already exists")
+			}
+			return nil, fmt.Errorf("failed to create new link mapping: %w", err)
+		}
+	} else {
+		// Only URL is changing - update existing link
+		_, err = tx.Exec(`
+			UPDATE link_mappings
+			SET original_url = ?
+			WHERE short_code = ?
+		`, newURL, oldShortCode)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to update link mapping: %w", err)
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return &models.UpdateLinkResponse{
+		OldShortCode: oldShortCode,
+		NewShortCode: newShortCode,
+		NewURL:       newURL,
+		ShortURL:     fmt.Sprintf("%s/%s", getBaseURL(), newShortCode),
+	}, nil
+}
+
 func (s *ShortenerService) TrackClick(shortCode, userAgent, ipAddress, referrer string) error {
 	// Record click analytics
 	_, err := s.db.Exec(`
@@ -150,6 +255,73 @@ func (s *ShortenerService) GetAnalytics() (*models.AnalyticsResponse, error) {
 	return s.GetAnalyticsPaginated(1, 50, "")
 }
 
+func (s *ShortenerService) GetLinkWithAnalytics(shortCode string) (*models.LinkMapping, error) {
+	var link models.LinkMapping
+	var createdAt int64
+	var lastAccessed sql.NullInt64
+	var parentShortCode sql.NullString
+
+	err := s.db.QueryRow(`
+		SELECT short_code, original_url, created_at, created_by, click_count, last_accessed, parent_short_code
+		FROM link_mappings WHERE short_code = ?
+	`, shortCode).Scan(&link.ShortCode, &link.OriginalURL, &createdAt, &link.CreatedBy, &link.ClickCount, &lastAccessed, &parentShortCode)
+
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("short code not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("database error: %w", err)
+	}
+
+	link.CreatedAt = time.Unix(createdAt, 0)
+	if lastAccessed.Valid {
+		t := time.Unix(lastAccessed.Int64, 0)
+		link.LastAccessed = &t
+	}
+	if parentShortCode.Valid {
+		link.ParentShortCode = &parentShortCode.String
+	}
+
+	return &link, nil
+}
+
+func (s *ShortenerService) DeleteLink(shortCode string) error {
+	// Begin transaction to delete both link and its analytics
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Check if link exists
+	var exists bool
+	err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM link_mappings WHERE short_code = ?)`, shortCode).Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("failed to check if link exists: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("short code not found")
+	}
+
+	// Delete analytics first (foreign key constraint)
+	_, err = tx.Exec(`DELETE FROM click_analytics WHERE short_code = ?`, shortCode)
+	if err != nil {
+		return fmt.Errorf("failed to delete click analytics: %w", err)
+	}
+
+	// Delete the link mapping
+	_, err = tx.Exec(`DELETE FROM link_mappings WHERE short_code = ?`, shortCode)
+	if err != nil {
+		return fmt.Errorf("failed to delete link mapping: %w", err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
 func (s *ShortenerService) GetAnalyticsPaginated(page, pageSize int, searchTerm string) (*models.AnalyticsResponse, error) {
 	if page < 1 {
 		page = 1
@@ -189,7 +361,7 @@ func (s *ShortenerService) GetAnalyticsPaginated(page, pageSize int, searchTerm 
 
 	// Get paginated links
 	linkQuery := fmt.Sprintf(`
-		SELECT short_code, original_url, created_at, created_by, click_count, last_accessed
+		SELECT short_code, original_url, created_at, created_by, click_count, last_accessed, parent_short_code
 		FROM link_mappings %s
 		ORDER BY created_at DESC
 		LIMIT ? OFFSET ?
@@ -210,8 +382,9 @@ func (s *ShortenerService) GetAnalyticsPaginated(page, pageSize int, searchTerm 
 		var link models.LinkMapping
 		var createdAt int64
 		var lastAccessed sql.NullInt64
+		var parentShortCode sql.NullString
 
-		err := rows.Scan(&link.ShortCode, &link.OriginalURL, &createdAt, &link.CreatedBy, &link.ClickCount, &lastAccessed)
+		err := rows.Scan(&link.ShortCode, &link.OriginalURL, &createdAt, &link.CreatedBy, &link.ClickCount, &lastAccessed, &parentShortCode)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan link: %w", err)
 		}
@@ -220,6 +393,9 @@ func (s *ShortenerService) GetAnalyticsPaginated(page, pageSize int, searchTerm 
 		if lastAccessed.Valid {
 			t := time.Unix(lastAccessed.Int64, 0)
 			link.LastAccessed = &t
+		}
+		if parentShortCode.Valid {
+			link.ParentShortCode = &parentShortCode.String
 		}
 
 		links = append(links, link)

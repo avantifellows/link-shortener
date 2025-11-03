@@ -5,7 +5,7 @@
 <div class="bg-white rounded-lg shadow-md p-6 mb-8">
     <h2 class="text-xl font-semibold text-gray-900 mb-4">Create Short Link</h2>
     
-    <form hx-post="/shorten" hx-target="#form-result" hx-swap="innerHTML" hx-headers='{"Authorization": "Bearer {{.AuthToken}}"}' class="space-y-4">
+    <form hx-post="/api/links" hx-target="#form-result" hx-swap="innerHTML" hx-headers='{"Authorization": "Bearer {{.AuthToken}}"}' class="space-y-4">
         <div>
             <label for="original_url" class="block text-sm font-medium text-gray-700">Original URL</label>
             <input type="url" id="original_url" name="original_url" required
@@ -106,4 +106,142 @@
         {{template "analytics-table.html" .}}
     </div>
 </div>
+
+<!-- Edit Modal -->
+<div id="edit-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden z-50">
+    <div class="flex items-center justify-center min-h-screen px-4">
+        <div class="bg-white rounded-lg shadow-lg max-w-md w-full">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <h3 class="text-lg font-medium text-gray-900">Edit Link</h3>
+            </div>
+            <div class="px-6 py-4">
+                <form id="edit-form" hx-target="#edit-result" hx-swap="innerHTML" class="space-y-4">
+                    <div>
+                        <label for="edit_new_short_code" class="block text-sm font-medium text-gray-700">Short Code</label>
+                        <input type="text" id="edit_new_short_code" name="new_short_code"
+                               class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                               placeholder="custom-code">
+                        <p class="mt-1 text-sm text-gray-500">3-20 characters, letters, numbers, hyphens, and underscores only. Leave empty to keep current code.</p>
+                    </div>
+
+                    <div>
+                        <label for="edit_new_url" class="block text-sm font-medium text-gray-700">Original URL</label>
+                        <input type="url" id="edit_new_url" name="new_url" required
+                               class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                               placeholder="https://example.com">
+                    </div>
+
+                    <div id="edit-result"></div>
+
+                    <div class="flex justify-end space-x-3 pt-4">
+                        <button type="button" onclick="closeEditModal()"
+                                class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">
+                            Cancel
+                        </button>
+                        <button type="button" id="update-btn"
+                                hx-put="/api/links/placeholder"
+                                hx-target="#edit-result"
+                                hx-swap="innerHTML"
+                                hx-headers='{"Authorization": "Bearer {{.AuthToken}}", "Content-Type": "application/x-www-form-urlencoded"}'
+                                hx-include="#edit-form"
+                                class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md text-sm">
+                            Update Link
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function openEditModal(shortCode, originalURL) {
+    console.log('openEditModal called with:', shortCode, originalURL);
+
+    // Set button's htmx PUT URL
+    const updateBtn = document.getElementById('update-btn');
+    if (!updateBtn) {
+        console.error('update-btn not found!');
+        return;
+    }
+
+    const newUrl = `/api/links/${shortCode}`;
+    updateBtn.setAttribute('hx-put', newUrl);
+    updateBtn.setAttribute('hx-headers', `{"Authorization": "Bearer {{.AuthToken}}", "Content-Type": "application/x-www-form-urlencoded"}`);
+
+    console.log('Set hx-put to:', newUrl);
+    console.log('Button hx-put attribute:', updateBtn.getAttribute('hx-put'));
+
+    // Need to reinitialize htmx after changing attributes
+    if (window.htmx) {
+        htmx.process(updateBtn);
+    }
+
+    // Pre-fill form fields
+    document.getElementById('edit_new_short_code').value = shortCode;
+    document.getElementById('edit_new_url').value = originalURL;
+
+    // Clear any previous results
+    document.getElementById('edit-result').innerHTML = '';
+
+    // Show modal
+    document.getElementById('edit-modal').classList.remove('hidden');
+}
+
+function closeEditModal() {
+    document.getElementById('edit-modal').classList.add('hidden');
+
+    // Clear form
+    document.getElementById('edit-form').reset();
+    document.getElementById('edit-result').innerHTML = '';
+}
+
+// Close modal when clicking outside
+document.getElementById('edit-modal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeEditModal();
+    }
+});
+
+// Close modal on Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && !document.getElementById('edit-modal').classList.contains('hidden')) {
+        closeEditModal();
+    }
+});
+
+// Handle edit responses (both success and error)
+document.body.addEventListener('htmx:afterRequest', function(e) {
+    if (e.target.id === 'update-btn') {
+        if (e.detail.xhr.status === 200) {
+            // Success - close modal after 2 seconds and refresh table
+            setTimeout(() => {
+                closeEditModal();
+                // Refresh analytics table
+                htmx.ajax('GET', window.location.pathname + window.location.search, {
+                    target: '#analytics-table',
+                    swap: 'innerHTML'
+                });
+            }, 2000);
+        } else {
+            // Error - show error message
+            const resultDiv = document.getElementById('edit-result');
+            const errorMessage = e.detail.xhr.responseText || 'An error occurred';
+            resultDiv.innerHTML = '<div class="bg-red-50 border border-red-200 rounded-md p-4 mt-4">' +
+                '<div class="flex">' +
+                    '<div class="flex-shrink-0">' +
+                        '<svg class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">' +
+                            '<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>' +
+                        '</svg>' +
+                    '</div>' +
+                    '<div class="ml-3">' +
+                        '<h3 class="text-sm font-medium text-red-800">Error updating link</h3>' +
+                        '<p class="mt-1 text-sm text-red-700">' + errorMessage + '</p>' +
+                    '</div>' +
+                '</div>' +
+            '</div>';
+        }
+    }
+});
+</script>
 {{end}}

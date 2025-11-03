@@ -86,6 +86,41 @@ DOMAIN_NAME=$(grep "^BASE_URL=" .env.production | cut -d'=' -f2 | sed 's|https:/
 # Configure nginx
 echo "🌐 Configuring nginx for domain: $DOMAIN_NAME..."
 
+# Create proper main nginx.conf
+cat > /tmp/nginx.conf << EOF
+user www-data;
+worker_processes auto;
+pid /run/nginx.pid;
+include /etc/nginx/modules-enabled/*.conf;
+
+events {
+    worker_connections 768;
+    # multi_accept on;
+}
+
+http {
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    ssl_protocols TLSv1 TLSv1.1 TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+
+    access_log /var/log/nginx/access.log;
+    error_log /var/log/nginx/error.log;
+
+    gzip on;
+
+    include /etc/nginx/conf.d/*.conf;
+    include /etc/nginx/sites-enabled/*;
+}
+EOF
+
 # Create nginx configuration for Let's Encrypt SSL
 cat > /tmp/link-shortener-nginx << EOF
 # Redirect HTTP to HTTPS
@@ -138,7 +173,8 @@ server {
 }
 EOF
 
-# Upload nginx config
+# Upload nginx configs
+scp -i $KEY_PATH /tmp/nginx.conf $SERVER:/tmp/
 scp -i $KEY_PATH /tmp/link-shortener-nginx $SERVER:/tmp/
 
 # Backup and replace nginx configuration
@@ -146,7 +182,8 @@ ssh -i $KEY_PATH $SERVER "
     # Backup existing configurations
     sudo mkdir -p /etc/nginx/backup-$(date +%Y%m%d_%H%M%S)
     
-    # Backup any existing link-shortener configs
+    # Backup main nginx.conf and site configs
+    sudo cp /etc/nginx/nginx.conf /etc/nginx/backup-$(date +%Y%m%d_%H%M%S)/nginx.conf
     if [ -f /etc/nginx/sites-available/link-shortener ]; then
         sudo cp /etc/nginx/sites-available/link-shortener /etc/nginx/backup-$(date +%Y%m%d_%H%M%S)/
     fi
@@ -159,7 +196,10 @@ ssh -i $KEY_PATH $SERVER "
     sudo rm -f /etc/nginx/sites-enabled/temp-lnk*
     sudo rm -f /etc/nginx/sites-available/temp-lnk*
     
-    # Install new configuration
+    # Install fixed main nginx.conf
+    sudo mv /tmp/nginx.conf /etc/nginx/nginx.conf
+    
+    # Install new site configuration
     sudo mv /tmp/link-shortener-nginx /etc/nginx/sites-available/link-shortener
     sudo ln -sf /etc/nginx/sites-available/link-shortener /etc/nginx/sites-enabled/
     

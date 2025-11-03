@@ -5,12 +5,13 @@ import (
 )
 
 type LinkMapping struct {
-	ShortCode    string     `json:"short_code" db:"short_code"`
-	OriginalURL  string     `json:"original_url" db:"original_url"`
-	CreatedAt    time.Time  `json:"created_at" db:"created_at"`
-	CreatedBy    string     `json:"created_by" db:"created_by"`
-	ClickCount   int        `json:"click_count" db:"click_count"`
-	LastAccessed *time.Time `json:"last_accessed" db:"last_accessed"`
+	ShortCode       string     `json:"short_code" db:"short_code"`
+	OriginalURL     string     `json:"original_url" db:"original_url"`
+	CreatedAt       time.Time  `json:"created_at" db:"created_at"`
+	CreatedBy       string     `json:"created_by" db:"created_by"`
+	ClickCount      int        `json:"click_count" db:"click_count"`
+	LastAccessed    *time.Time `json:"last_accessed" db:"last_accessed"`
+	ParentShortCode *string    `json:"parent_short_code" db:"parent_short_code"`
 }
 
 type ClickAnalytics struct {
@@ -32,6 +33,18 @@ type CreateShortURLResponse struct {
 	ShortCode   string `json:"short_code"`
 	ShortURL    string `json:"short_url"`
 	OriginalURL string `json:"original_url"`
+}
+
+type UpdateLinkRequest struct {
+	NewShortCode string `json:"new_short_code" form:"new_short_code"`
+	NewURL       string `json:"new_url" form:"new_url"`
+}
+
+type UpdateLinkResponse struct {
+	OldShortCode string `json:"old_short_code"`
+	NewShortCode string `json:"new_short_code"`
+	NewURL       string `json:"new_url"`
+	ShortURL     string `json:"short_url"`
 }
 
 type AnalyticsResponse struct {

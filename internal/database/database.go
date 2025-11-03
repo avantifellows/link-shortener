@@ -69,5 +69,62 @@ func Initialize() (*sql.DB, error) {
 		return nil, err
 	}
 
+	// Run migrations
+	if err := runMigrations(db); err != nil {
+		return nil, err
+	}
+
 	return db, nil
+}
+
+func runMigrations(db *sql.DB) error {
+	// Create migrations table if it doesn't exist
+	_, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS migrations (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT UNIQUE NOT NULL,
+			applied_at INTEGER NOT NULL
+		);
+	`)
+	if err != nil {
+		return err
+	}
+
+	// Migration 1: Add parent_short_code column
+	var exists bool
+	err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM migrations WHERE name = ?)", "add_parent_short_code").Scan(&exists)
+	if err != nil {
+		return err
+	}
+
+	if !exists {
+		// Check if column already exists (for safety)
+		var hasColumn bool
+		err = db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('link_mappings') WHERE name = 'parent_short_code'").Scan(&hasColumn)
+		if err != nil {
+			return err
+		}
+
+		if !hasColumn {
+			// Add the column
+			_, err = db.Exec("ALTER TABLE link_mappings ADD COLUMN parent_short_code TEXT")
+			if err != nil {
+				return err
+			}
+
+			// Create the index
+			_, err = db.Exec("CREATE INDEX IF NOT EXISTS idx_parent_short_code ON link_mappings(parent_short_code)")
+			if err != nil {
+				return err
+			}
+		}
+
+		// Mark migration as applied
+		_, err = db.Exec("INSERT INTO migrations (name, applied_at) VALUES (?, ?)", "add_parent_short_code", time.Now().Unix())
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

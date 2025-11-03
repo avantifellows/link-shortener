@@ -319,6 +319,97 @@ func (h *Handlers) Analytics(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *Handlers) GetLink(w http.ResponseWriter, r *http.Request) {
+	shortCode := chi.URLParam(r, "code")
+	if shortCode == "" {
+		http.Error(w, "Short code is required", http.StatusBadRequest)
+		return
+	}
+
+	// Get link details with analytics
+	link, err := h.shortenerService.GetLinkWithAnalytics(shortCode)
+	if err != nil {
+		http.Error(w, "Link not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(link)
+}
+
+func (h *Handlers) DeleteLink(w http.ResponseWriter, r *http.Request) {
+	shortCode := chi.URLParam(r, "code")
+	if shortCode == "" {
+		http.Error(w, "Short code is required", http.StatusBadRequest)
+		return
+	}
+
+	err := h.shortenerService.DeleteLink(shortCode)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Link deleted successfully",
+		"code":    shortCode,
+	})
+}
+
+func (h *Handlers) UpdateLink(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut && r.Method != http.MethodPatch {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	shortCode := chi.URLParam(r, "code")
+	if shortCode == "" {
+		http.Error(w, "Short code is required", http.StatusBadRequest)
+		return
+	}
+
+	// Parse form data
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+
+	req := models.UpdateLinkRequest{
+		NewShortCode: strings.TrimSpace(r.FormValue("new_short_code")),
+		NewURL:       strings.TrimSpace(r.FormValue("new_url")),
+	}
+
+	// Update the link
+	response, err := h.shortenerService.UpdateLink(shortCode, req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Check if request accepts JSON (API call) or HTML (htmx/form)
+	if strings.Contains(r.Header.Get("Accept"), "application/json") {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	} else {
+		// Return htmx partial template with success message
+		data := struct {
+			Success      bool
+			UpdateResult *models.UpdateLinkResponse
+			Error        string
+		}{
+			Success:      true,
+			UpdateResult: response,
+		}
+
+		w.Header().Set("Content-Type", "text/html")
+		if err := h.templates.ExecuteTemplate(w, "update-success.html", data); err != nil {
+			http.Error(w, "Template error", http.StatusInternalServerError)
+			return
+		}
+	}
+}
+
 func getClientIP(r *http.Request) string {
 	// Check X-Forwarded-For header first (for proxies)
 	forwarded := r.Header.Get("X-Forwarded-For")
