@@ -188,18 +188,211 @@ func TestCreateInvalidURLReturns400(t *testing.T) {
 	}
 }
 
-func TestDashboardIsPublic(t *testing.T) {
+// login posts the token to the dashboard login form and returns the session cookie.
+func login(t *testing.T, r http.Handler, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	form := url.Values{}
+	form.Set("token", token)
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
+}
+
+func sessionCookie(t *testing.T, rec *httptest.ResponseRecorder) *http.Cookie {
+	t.Helper()
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "lnk_session" {
+			return c
+		}
+	}
+	t.Fatalf("no lnk_session cookie set; headers = %v", rec.Header())
+	return nil
+}
+
+func TestDashboardShowsLoginWithoutSession(t *testing.T) {
 	r := newTestRouter(t)
+	code := createLink(t, r, "https://example.com/private-list")
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 (dashboard should need no auth)", rec.Code)
+		t.Fatalf("status = %d, want 200 (login page)", rec.Code)
 	}
-	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
+	body := rec.Body.String()
+	if !strings.Contains(body, `action="/auth/login"`) {
+		t.Errorf("expected the login form, got %q", body)
+	}
+	if strings.Contains(body, testAuthToken) {
+		t.Error("login page must not contain the auth token")
+	}
+	if strings.Contains(body, code) {
+		t.Error("login page must not list links")
+	}
+}
+
+func TestLoginWithWrongToken(t *testing.T) {
+	r := newTestRouter(t)
+	rec := login(t, r, "wrong-token")
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "lnk_session" {
+			t.Fatal("wrong token must not set a session cookie")
+		}
+	}
+}
+
+func TestLoginThenDashboard(t *testing.T) {
+	r := newTestRouter(t)
+	code := createLink(t, r, "https://example.com/listed")
+
+	rec := login(t, r, testAuthToken)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("login status = %d, want 303", rec.Code)
+	}
+	c := sessionCookie(t, rec)
+	if !c.HttpOnly || c.SameSite != http.SameSiteLaxMode {
+		t.Errorf("cookie must be HttpOnly and SameSite=Lax, got %+v", c)
+	}
+	if strings.Contains(c.Value, testAuthToken) {
+		t.Error("cookie must not contain the auth token")
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(c)
+	dash := httptest.NewRecorder()
+	r.ServeHTTP(dash, req)
+
+	if dash.Code != http.StatusOK {
+		t.Fatalf("dashboard status = %d, want 200", dash.Code)
+	}
+	if ct := dash.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
 		t.Errorf("Content-Type = %q, want text/html", ct)
+	}
+	body := dash.Body.String()
+	if !strings.Contains(body, code) {
+		t.Error("logged-in dashboard should list the link")
+	}
+	if strings.Contains(body, testAuthToken) {
+		t.Error("dashboard must not contain the auth token")
+	}
+}
+
+func TestSessionCookieAuthorizesDashboardAPICalls(t *testing.T) {
+	r := newTestRouter(t)
+	c := sessionCookie(t, login(t, r, testAuthToken))
+
+	post := func(withHTMX bool) int {
+		form := url.Values{}
+		form.Set("original_url", "https://example.com/from-dashboard")
+		req := httptest.NewRequest(http.MethodPost, "/api/links", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		if withHTMX {
+			req.Header.Set("HX-Request", "true")
+		}
+		req.AddCookie(c)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if got := post(true); got != http.StatusOK {
+		t.Errorf("htmx call with session: status = %d, want 200", got)
+	}
+	if got := post(false); got != http.StatusUnauthorized {
+		t.Errorf("non-htmx call with only a cookie: status = %d, want 401 (CSRF guard)", got)
+	}
+}
+
+func TestForgedSessionIsRejected(t *testing.T) {
+	r := newTestRouter(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(&http.Cookie{Name: "lnk_session", Value: "9999999999.deadbeef"})
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if !strings.Contains(rec.Body.String(), `action="/auth/login"`) {
+		t.Error("a forged cookie must get the login page")
+	}
+}
+
+func TestDashboardIsNotCached(t *testing.T) {
+	r := newTestRouter(t)
+	c := sessionCookie(t, login(t, r, testAuthToken))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(c)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", got)
+	}
+}
+
+func TestExpiredSessionRedirectsHTMXToLogin(t *testing.T) {
+	r := newTestRouter(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/links", strings.NewReader("original_url=https://example.com/x"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
+	req.AddCookie(&http.Cookie{Name: "lnk_session", Value: "1.deadbeef"})
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", rec.Code)
+	}
+	if got := rec.Header().Get("HX-Redirect"); got != "/" {
+		t.Errorf("HX-Redirect = %q, want /", got)
+	}
+}
+
+func TestGetLoginURLRedirectsToDashboard(t *testing.T) {
+	r := newTestRouter(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/login", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/" {
+		t.Errorf("GET /auth/login = %d to %q, want 303 to /", rec.Code, rec.Header().Get("Location"))
+	}
+}
+
+func TestCrossSiteLogoutIsRefused(t *testing.T) {
+	r := newTestRouter(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", rec.Code)
+	}
+}
+
+func TestLogoutClearsSession(t *testing.T) {
+	r := newTestRouter(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303", rec.Code)
+	}
+	c := sessionCookie(t, rec)
+	if c.MaxAge >= 0 || c.Value != "" {
+		t.Errorf("logout should expire the cookie, got %+v", c)
 	}
 }
 

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex">
+    <title>{{.Title}}</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="max-w-md mx-auto px-4 py-16">
+        <h1 class="text-2xl font-bold text-gray-900">Link Shortener</h1>
+        <p class="text-gray-600 mt-2">Avanti Fellows Link Shortener. Enter the admin token to manage links.</p>
+
+        <form action="/auth/login" method="POST" class="bg-white rounded-lg shadow-md p-6 mt-6 space-y-4">
+            <div>
+                <label for="token" class="block text-sm font-medium text-gray-700">Admin token</label>
+                <input type="password" id="token" name="token" required autocomplete="current-password" autofocus
+                       class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            {{if .Error}}
+            <p class="text-sm text-red-700">{{.Error}}</p>
+            {{end}}
+            <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md">
+                Log in
+            </button>
+        </form>
+    </div>
+</body>
+</html>

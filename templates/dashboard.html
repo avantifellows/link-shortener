@@ -1,11 +1,16 @@
 {{template "base.html" .}}
 
 {{define "content"}}
+<!-- Logout -->
+<form action="/auth/logout" method="POST" class="flex justify-end -mt-4 mb-4">
+    <button type="submit" class="text-sm text-gray-600 hover:text-gray-900 underline">Log out</button>
+</form>
+
 <!-- Create Link Form -->
 <div class="bg-white rounded-lg shadow-md p-6 mb-8">
     <h2 class="text-xl font-semibold text-gray-900 mb-4">Create Short Link</h2>
     
-    <form hx-post="/api/links" hx-target="#form-result" hx-swap="innerHTML" hx-headers='{"Authorization": "Bearer {{.AuthToken}}"}' class="space-y-4">
+    <form hx-post="/api/links" hx-target="#form-result" hx-swap="innerHTML" class="space-y-4">
         <div>
             <label for="original_url" class="block text-sm font-medium text-gray-700">Original URL</label>
             <input type="url" id="original_url" name="original_url" required
@@ -142,7 +147,7 @@
                                 hx-put="/api/links/placeholder"
                                 hx-target="#edit-result"
                                 hx-swap="innerHTML"
-                                hx-headers='{"Authorization": "Bearer {{.AuthToken}}", "Content-Type": "application/x-www-form-urlencoded"}'
+                                hx-headers='{"Content-Type": "application/x-www-form-urlencoded"}'
                                 hx-include="#edit-form"
                                 class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md text-sm">
                             Update Link
@@ -167,7 +172,7 @@ function openEditModal(shortCode, originalURL) {
 
     const newUrl = `/api/links/${shortCode}`;
     updateBtn.setAttribute('hx-put', newUrl);
-    updateBtn.setAttribute('hx-headers', `{"Authorization": "Bearer {{.AuthToken}}", "Content-Type": "application/x-www-form-urlencoded"}`);
+    updateBtn.setAttribute('hx-headers', `{"Content-Type": "application/x-www-form-urlencoded"}`);
 
     console.log('Set hx-put to:', newUrl);
     console.log('Button hx-put attribute:', updateBtn.getAttribute('hx-put'));
@@ -210,6 +215,13 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
+// Server error text can echo user input, so never insert it as HTML.
+function escapeHTML(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 // Handle edit responses (both success and error)
 document.body.addEventListener('htmx:afterRequest', function(e) {
     if (e.target.id === 'update-btn') {
@@ -236,7 +248,7 @@ document.body.addEventListener('htmx:afterRequest', function(e) {
                     '</div>' +
                     '<div class="ml-3">' +
                         '<h3 class="text-sm font-medium text-red-800">Error updating link</h3>' +
-                        '<p class="mt-1 text-sm text-red-700">' + errorMessage + '</p>' +
+                        '<p class="mt-1 text-sm text-red-700">' + escapeHTML(errorMessage) + '</p>' +
                     '</div>' +
                 '</div>' +
             '</div>';
