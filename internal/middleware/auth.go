@@ -19,6 +19,11 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		// Get Authorization header
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
+			// The dashboard calls the API with its login cookie instead of the token.
+			if isHTMXRequest(r) && HasValidSession(r) {
+				next.ServeHTTP(w, r)
+				return
+			}
 			http.Error(w, "Authorization header required", http.StatusUnauthorized)
 			return
 		}
@@ -31,7 +36,7 @@ func AuthMiddleware(next http.Handler) http.Handler {
 
 		// Extract the token
 		token := strings.TrimPrefix(authHeader, "Bearer ")
-		if token != expectedToken {
+		if !TokenMatches(token, expectedToken) {
 			http.Error(w, "Invalid token", http.StatusUnauthorized)
 			return
 		}

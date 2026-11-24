@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A minimalist link shortener service for Avanti Fellows (~200 internal users) built with Go, htmx, and SQLite. The service provides URL shortening with analytics, featuring a hybrid authentication model: public dashboard/redirects and authenticated API endpoints.
+A minimalist link shortener service for Avanti Fellows (~200 internal users) built with Go, htmx, and SQLite. The service provides URL shortening with analytics, featuring public redirects, a login-protected dashboard and token-authenticated API endpoints.
 
 ## Tech Stack & Architecture
 
@@ -21,7 +21,7 @@ A minimalist link shortener service for Avanti Fellows (~200 internal users) bui
 - **Minimal JavaScript** - htmx handles most dynamic behavior
 
 ### Key Architecture Patterns
-- **Hybrid Authentication**: Public dashboard/redirects, Bearer token protected API
+- **Authentication**: Public redirects; dashboard behind a token login (session cookie); Bearer token protected API
 - **Async Click Tracking**: Background goroutine processes click events via channels
 - **Template Function Extensions**: Custom template functions for pagination and calculations
 - **Graceful Shutdown**: 30-second timeout with signal handling
@@ -108,9 +108,9 @@ CGO_ENABLED=0 go build -ldflags="-s -w" -o link-shortener cmd/server/main.go
 ## API Architecture & Routes
 
 ### Authentication Model
-- **Public Routes**: `/`, `/{code}`, `/health` - No auth required
-- **Protected Routes**: `/api/*` and legacy endpoints - Bearer token required
-- **Hybrid Access**: Dashboard public for viewing, API protected for creation/modification
+- **Public Routes**: `/{code}`, `/health` - No auth required
+- **Dashboard**: `/` shows a login form until the admin token is entered at `POST /auth/login`, which sets a signed HttpOnly session cookie. The token is never rendered into HTML.
+- **Protected Routes**: `/api/*` and legacy endpoints - Bearer token, or the dashboard session cookie on htmx requests (`HX-Request: true`)
 
 ### Route Structure
 ```go

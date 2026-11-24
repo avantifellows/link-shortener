@@ -6,7 +6,7 @@ A minimalist link shortener service for Avanti Fellows, built with Go, htmx, and
 
 - **URL Shortening**: Create short URLs from long ones with optional custom codes
 - **Fast Redirects**: High-performance redirects using Go's compiled binary
-- **Analytics Dashboard**: Track clicks and view link statistics with public access
+- **Analytics Dashboard**: Track clicks and view link statistics (login with the admin token)
 - **Real-time Updates**: htmx-powered interface with auto-refresh
 - **Bearer Token Authentication**: Secure API access for link creation
 - **SQLite Storage**: Lightweight database for URL mappings and analytics
@@ -29,7 +29,7 @@ A minimalist link shortener service for Avanti Fellows, built with Go, htmx, and
 
 2. **Open your browser** to `http://localhost:8080`
 
-3. **View analytics** and existing links on the public dashboard
+3. **View analytics** and existing links on the dashboard (after logging in)
 
 4. **Create a short link** via [API](API.md) (requires authentication) or browser form
 
@@ -126,13 +126,13 @@ curl -X POST http://localhost:8080/shorten \
 # Test redirect (public, no auth needed)
 curl -L http://localhost:8080/{short_code}
 
-# Check analytics (public, no auth needed)
-curl -H "Accept: application/json" http://localhost:8080/analytics
+# Check analytics (token required)
+curl -H "Authorization: Bearer $AUTH_TOKEN" -H "Accept: application/json" http://localhost:8080/api/links
 ```
 
 ### Test Coverage
 The test suite validates:
-- ✅ Public endpoints (dashboard, analytics, redirects, health)
+- ✅ Public endpoints (redirects, health) and the dashboard login
 - ✅ Protected endpoints (link creation with bearer token)
 - ✅ Authentication rejection (invalid/missing tokens)
 - ✅ JSON API responses
@@ -141,8 +141,7 @@ The test suite validates:
 ## Authentication Setup
 
 ### Current Authentication Model
-- 🌐 **Dashboard**: Public access (browser-friendly)
-- 🌐 **Analytics**: Public access (for monitoring) 
+- 🔒 **Dashboard and analytics page**: log in with the admin token (session cookie, 12 hours)
 - 🔒 **Link Creation**: Bearer token required (API security)
 - 🌐 **Redirects**: Public access (end-user friendly)
 
@@ -164,7 +163,7 @@ uuidgen
 ## Next Steps (Deployment)
 
 - [x] ✅ Bearer token authentication
-- [x] ✅ Public dashboard access
+- [x] ✅ Dashboard behind a token login
 - [x] ✅ API security for link creation
 - [ ] Rate limiting and security middleware
 - [ ] Docker containerization  

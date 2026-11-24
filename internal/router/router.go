@@ -24,8 +24,10 @@ func New(h *handlers.Handlers) http.Handler {
 
 	// Public routes (no authentication required)
 	r.Get("/health", h.Health)
-	r.Get("/", h.Dashboard)         // Dashboard web interface
-	r.Get("/{code}", h.RedirectURL) // URL redirects - MUST be last to avoid conflicts
+	r.Get("/", h.Dashboard)          // Dashboard web interface (shows a login form until logged in)
+	r.Post("/auth/login", h.Login)   // Dashboard login: checks the token, sets a session cookie
+	r.Post("/auth/logout", h.Logout) // Dashboard logout
+	r.Get("/{code}", h.RedirectURL)  // URL redirects - MUST be last to avoid conflicts
 
 	// API routes (with authentication)
 	r.Route("/api", func(r chi.Router) {

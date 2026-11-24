@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/avantifellows/link-shortener/internal/logger"
+	authmiddleware "github.com/avantifellows/link-shortener/internal/middleware"
 	"github.com/avantifellows/link-shortener/internal/models"
 	"github.com/avantifellows/link-shortener/internal/services"
 	"github.com/go-chi/chi/v5"
@@ -151,6 +152,13 @@ func (h *Handlers) Health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
+	// The dashboard lists every link and lets people create and edit them, so it
+	// needs a login. The auth token is never written into the page.
+	if !authmiddleware.HasValidSession(r) {
+		h.renderLogin(w, http.StatusOK, "")
+		return
+	}
+
 	// Get pagination and search parameters
 	page := getIntParam(r, "page", 1)
 	pageSize := getIntParam(r, "size", 50)
@@ -167,13 +175,11 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
 		Title      string
 		Analytics  *models.AnalyticsResponse
 		BaseURL    string
-		AuthToken  string
 		SearchTerm string
 	}{
 		Title:      "Link Shortener Dashboard",
 		Analytics:  analytics,
 		BaseURL:    getBaseURL(),
-		AuthToken:  getAuthToken(),
 		SearchTerm: searchTerm,
 	}
 
@@ -439,6 +445,73 @@ func getBaseURL() string {
 
 func getAuthToken() string {
 	return os.Getenv("AUTH_TOKEN")
+}
+
+// renderLogin shows the dashboard login form.
+func (h *Handlers) renderLogin(w http.ResponseWriter, status int, errorMessage string) {
+	w.Header().Set("Content-Type", "text/html")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	data := struct {
+		Title string
+		Error string
+	}{
+		Title: "Link Shortener Login",
+		Error: errorMessage,
+	}
+	if err := h.templates.ExecuteTemplate(w, "login.html", data); err != nil {
+		logger.Error("Template execution error: %v", err)
+	}
+}
+
+// isSecureRequest is true when the browser reached us over HTTPS (directly or via nginx).
+func isSecureRequest(r *http.Request) bool {
+	return r.TLS != nil ||
+		r.Header.Get("X-Forwarded-Proto") == "https" ||
+		strings.HasPrefix(getBaseURL(), "https://")
+}
+
+// Login checks the token typed into the dashboard login form and sets a signed,
+// HttpOnly session cookie. The cookie holds an expiry and a signature, not the token.
+func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
+	expectedToken := getAuthToken()
+	if expectedToken == "" {
+		http.Error(w, "AUTH_TOKEN environment variable not configured", http.StatusInternalServerError)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		h.renderLogin(w, http.StatusBadRequest, "Invalid form data")
+		return
+	}
+	if !authmiddleware.TokenMatches(strings.TrimSpace(r.PostForm.Get("token")), expectedToken) {
+		h.renderLogin(w, http.StatusUnauthorized, "That token is not correct.")
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     authmiddleware.SessionCookieName,
+		Value:    authmiddleware.NewSessionValue(expectedToken, time.Now()),
+		Path:     "/",
+		MaxAge:   int(authmiddleware.SessionTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   isSecureRequest(r),
+		SameSite: http.SameSiteStrictMode,
+	})
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// Logout clears the dashboard session cookie.
+func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     authmiddleware.SessionCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   isSecureRequest(r),
+		SameSite: http.SameSiteStrictMode,
+	})
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func getIntParam(r *http.Request, paramName string, defaultValue int) int {
