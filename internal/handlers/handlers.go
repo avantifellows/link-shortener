@@ -184,6 +184,7 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html")
+	w.Header().Set("Cache-Control", "no-store") // the link list must not stay in the browser cache after logout
 	if err := h.templates.ExecuteTemplate(w, "dashboard.html", data); err != nil {
 		logger.Error("Template execution error: %v", err)
 		http.Error(w, "Template error", http.StatusInternalServerError)
@@ -471,6 +472,11 @@ func isSecureRequest(r *http.Request) bool {
 		strings.HasPrefix(getBaseURL(), "https://")
 }
 
+// LoginPage sends people who land on /auth/login (refresh, bookmark) back to the dashboard.
+func (h *Handlers) LoginPage(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
 // Login checks the token typed into the dashboard login form and sets a signed,
 // HttpOnly session cookie. The cookie holds an expiry and a signature, not the token.
 func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
@@ -495,13 +501,17 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   int(authmiddleware.SessionTTL.Seconds()),
 		HttpOnly: true,
 		Secure:   isSecureRequest(r),
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 	})
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-// Logout clears the dashboard session cookie.
+// Logout clears the dashboard session cookie. Other sites can't log people out.
 func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     authmiddleware.SessionCookieName,
 		Value:    "",
@@ -509,7 +519,7 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   -1,
 		HttpOnly: true,
 		Secure:   isSecureRequest(r),
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 	})
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }

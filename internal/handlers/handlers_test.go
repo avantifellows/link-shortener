@@ -257,8 +257,8 @@ func TestLoginThenDashboard(t *testing.T) {
 		t.Fatalf("login status = %d, want 303", rec.Code)
 	}
 	c := sessionCookie(t, rec)
-	if !c.HttpOnly || c.SameSite != http.SameSiteStrictMode {
-		t.Errorf("cookie must be HttpOnly and SameSite=Strict, got %+v", c)
+	if !c.HttpOnly || c.SameSite != http.SameSiteLaxMode {
+		t.Errorf("cookie must be HttpOnly and SameSite=Lax, got %+v", c)
 	}
 	if strings.Contains(c.Value, testAuthToken) {
 		t.Error("cookie must not contain the auth token")
@@ -320,6 +320,63 @@ func TestForgedSessionIsRejected(t *testing.T) {
 
 	if !strings.Contains(rec.Body.String(), `action="/auth/login"`) {
 		t.Error("a forged cookie must get the login page")
+	}
+}
+
+func TestDashboardIsNotCached(t *testing.T) {
+	r := newTestRouter(t)
+	c := sessionCookie(t, login(t, r, testAuthToken))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(c)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", got)
+	}
+}
+
+func TestExpiredSessionRedirectsHTMXToLogin(t *testing.T) {
+	r := newTestRouter(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/links", strings.NewReader("original_url=https://example.com/x"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
+	req.AddCookie(&http.Cookie{Name: "lnk_session", Value: "1.deadbeef"})
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", rec.Code)
+	}
+	if got := rec.Header().Get("HX-Redirect"); got != "/" {
+		t.Errorf("HX-Redirect = %q, want /", got)
+	}
+}
+
+func TestGetLoginURLRedirectsToDashboard(t *testing.T) {
+	r := newTestRouter(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/login", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/" {
+		t.Errorf("GET /auth/login = %d to %q, want 303 to /", rec.Code, rec.Header().Get("Location"))
+	}
+}
+
+func TestCrossSiteLogoutIsRefused(t *testing.T) {
+	r := newTestRouter(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", rec.Code)
 	}
 }
 

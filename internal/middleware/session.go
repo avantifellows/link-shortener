@@ -68,7 +68,7 @@ func HasValidSession(r *http.Request) bool {
 // isHTMXRequest is true for requests sent by htmx from the dashboard. Browsers do not
 // let other sites add this header to a cross-site request without a CORS preflight,
 // which this server never grants, so it guards cookie-authenticated calls against CSRF
-// (on top of the SameSite=Strict cookie).
+// (on top of the SameSite=Lax cookie).
 func isHTMXRequest(r *http.Request) bool {
 	return r.Header.Get("HX-Request") == "true"
 }

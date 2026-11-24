@@ -20,9 +20,13 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
 			// The dashboard calls the API with its login cookie instead of the token.
-			if isHTMXRequest(r) && HasValidSession(r) {
-				next.ServeHTTP(w, r)
-				return
+			if isHTMXRequest(r) {
+				if HasValidSession(r) {
+					next.ServeHTTP(w, r)
+					return
+				}
+				// Session expired or missing: send the dashboard back to the login page.
+				w.Header().Set("HX-Redirect", "/")
 			}
 			http.Error(w, "Authorization header required", http.StatusUnauthorized)
 			return

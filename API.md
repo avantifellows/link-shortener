@@ -181,7 +181,7 @@ curl -L https://lnk.avantifellows.org/abc123
 
 Web interface for viewing analytics and creating or editing links. Without a login it shows a login form.
 
-- **POST** `/auth/login` (form field `token`): checks the admin token and sets a signed, HttpOnly, SameSite=Strict session cookie (`lnk_session`, 12 hours). The cookie holds an expiry and a signature, never the token. Rotating `AUTH_TOKEN` logs everyone out.
+- **POST** `/auth/login` (form field `token`): checks the admin token and sets a signed, HttpOnly, SameSite=Lax session cookie (`lnk_session`, 12 hours). The cookie holds an expiry and a signature, never the token. Rotating `AUTH_TOKEN` logs everyone out.
 - **POST** `/auth/logout`: clears the cookie.
 - The dashboard's own htmx calls to `/api/*` use the session cookie (they must carry the `HX-Request: true` header that htmx sends). Scripts and other services keep using the Bearer token as before.
 
